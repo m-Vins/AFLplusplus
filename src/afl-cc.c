@@ -1501,74 +1501,96 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
 }
 
-/* Main entry point */
+void check_compiler(int argc, char **argv) {
 
-int main(int argc, char **argv, char **envp) {
+  enum compiler {
 
-  int   i;
-  char *callname = argv[0], *ptr = NULL;
+    AFL_AS,
+    AFL_CXX,
+    AFL_CC,
+    AFL_CLANG,
+    AFL_CLANGXX,
+    AFL_CLANG_FAST,
+    AFL_CLANG_FASTXX,
+    AFL_LTO,
+    AFL_CLANG_LTO,
+    AFL_CLANG_LTOXX,
+    AFL_GXX,
+    AFL_GCC,
+    AFL_GCC_FAST,
+    AFL_GXX_FAST,
+    NUM_COMPILERS  // Add this for counting the number of elements
 
-  if (getenv("AFL_DEBUG")) {
+  };
 
-    debug = 1;
-    if (strcmp(getenv("AFL_DEBUG"), "0") == 0) unsetenv("AFL_DEBUG");
+  char       *callname = argv[0], *ptr = NULL;
+  const char *compiler_names[] = {
 
-  } else if (getenv("AFL_QUIET"))
+      "afl-as",        "afl-c++",         "afl-cc",           "afl-clang",
+      "afl-clang++",   "afl-clang-fast",  "afl-clang-fast++", "afl-lto",
+      "afl-clang-lto", "afl-clang-lto++", "afl-g++",          "afl-gcc",
+      "afl-gcc-fast",  "afl-g++-fast",
 
-    be_quiet = 1;
+  };
 
-  if (getenv("AFL_LLVM_INSTRUMENT_FILE") || getenv("AFL_LLVM_WHITELIST") ||
-      getenv("AFL_LLVM_ALLOWLIST") || getenv("AFL_LLVM_DENYLIST") ||
-      getenv("AFL_LLVM_BLOCKLIST")) {
+  enum compiler selected_compiler =
+      NUM_COMPILERS;  // Default value indicating an invalid compiler
 
-    have_instr_env = 1;
+  for (int i = 0; i < NUM_COMPILERS; ++i) {
 
-  }
+    if (strcmp(argv[0], compiler_names[i]) != 0) {
 
-  if (getenv("AFL_PASSTHROUGH") || getenv("AFL_NOOPT")) {
+      selected_compiler = (enum compiler)i;
+      break;
 
-    passthrough = 1;
-    if (!debug) { be_quiet = 1; }
-
-  }
-
-  if ((ptr = strrchr(callname, '/')) != NULL) callname = ptr + 1;
-  argvnull = (u8 *)argv[0];
-  check_environment_vars(envp);
-
-  if ((ptr = find_object("as", argv[0])) != NULL) {
-
-    have_gcc = 1;
-    ck_free(ptr);
-
-  }
-
-#if (LLVM_MAJOR >= 3)
-
-  if ((ptr = find_object("SanitizerCoverageLTO.so", argv[0])) != NULL) {
-
-    have_lto = 1;
-    ck_free(ptr);
+    }
 
   }
 
-  if ((ptr = find_object("cmplog-routines-pass.so", argv[0])) != NULL) {
+  switch (selected_compiler) {
 
-    have_llvm = 1;
-    ck_free(ptr);
-
-  }
-
-#endif
-
-#ifdef __ANDROID__
-  have_llvm = 1;
-#endif
-
-  if ((ptr = find_object("afl-gcc-pass.so", argv[0])) != NULL) {
-
-    have_gcc_plugin = 1;
-    ck_free(ptr);
+    // AS ??
+    case AFL_AS:
+      break;
+      // no symlink mode
+    case AFL_CXX:
+      plusplus_mode = 1;
+    case AFL_CC:
+      break;
+      // clang compiler
+    case AFL_CLANGXX:
+      plusplus_mode = 1;
+    case AFL_CLANG:
+      compiler_mode = CLANG;
+      break;
+      // gcc compiler
+    case AFL_GXX:
+      plusplus_mode = 1;
+    case AFL_GCC:
+      compiler_mode = GCC;
+      break;
+      // gcc plugin mode
+    case AFL_GXX_FAST:
+      plusplus_mode = 1;
+    case AFL_GCC_FAST:
+      compiler_mode = GCC_PLUGIN;
+      break;
+      // llvm mode
+    case AFL_CLANG_FASTXX:
+      plusplus_mode = 1;
+    case AFL_CLANG_FAST:
+      compiler_mode = LLVM;
+      break;
+      // lto mode
+    case AFL_CLANG_LTOXX:
+      plusplus_mode = 1;
+    case AFL_CLANG_LTO:
+    case AFL_LTO:
+      compiler_mode = LTO;
+      break;
+    default:
+      fprintf(stderr, "Invalid compiler: %s\n", argv[0]);
+      exit(0);
 
   }
 
@@ -1659,7 +1681,7 @@ int main(int argc, char **argv, char **envp) {
 
   }
 
-  for (i = 1; i < argc; i++) {
+  for (int i = 1; i < argc; i++) {
 
     if (strncmp(argv[i], "--afl", 5) == 0) {
 
@@ -1749,6 +1771,81 @@ int main(int argc, char **argv, char **envp) {
       (strncmp(callname + strlen(callname) - 2, "++", 2) == 0 ||
        strstr(callname, "-g++") != NULL))
     plusplus_mode = 1;
+
+}
+
+/* Main entry point */
+
+int main(int argc, char **argv, char **envp) {
+
+  int   i;
+  char *callname = argv[0], *ptr = NULL;
+
+  if (getenv("AFL_DEBUG")) {
+
+    debug = 1;
+    if (strcmp(getenv("AFL_DEBUG"), "0") == 0) unsetenv("AFL_DEBUG");
+
+  } else if (getenv("AFL_QUIET"))
+
+    be_quiet = 1;
+
+  if (getenv("AFL_LLVM_INSTRUMENT_FILE") || getenv("AFL_LLVM_WHITELIST") ||
+      getenv("AFL_LLVM_ALLOWLIST") || getenv("AFL_LLVM_DENYLIST") ||
+      getenv("AFL_LLVM_BLOCKLIST")) {
+
+    have_instr_env = 1;
+
+  }
+
+  if (getenv("AFL_PASSTHROUGH") || getenv("AFL_NOOPT")) {
+
+    passthrough = 1;
+    if (!debug) { be_quiet = 1; }
+
+  }
+
+  check_environment_vars(envp);
+  if ((ptr = strrchr(callname, '/')) != NULL) callname = ptr + 1;
+  argvnull = (u8 *)argv[0];
+
+  if ((ptr = find_object("as", argv[0])) != NULL) {
+
+    have_gcc = 1;
+    ck_free(ptr);
+
+  }
+
+#if (LLVM_MAJOR >= 3)
+
+  if ((ptr = find_object("SanitizerCoverageLTO.so", argv[0])) != NULL) {
+
+    have_lto = 1;
+    ck_free(ptr);
+
+  }
+
+  if ((ptr = find_object("cmplog-routines-pass.so", argv[0])) != NULL) {
+
+    have_llvm = 1;
+    ck_free(ptr);
+
+  }
+
+#endif
+
+#ifdef __ANDROID__
+  have_llvm = 1;
+#endif
+
+  if ((ptr = find_object("afl-gcc-pass.so", argv[0])) != NULL) {
+
+    have_gcc_plugin = 1;
+    ck_free(ptr);
+
+  }
+
+  check_compiler(argc, argv);
 
   if (getenv("USE_TRACE_PC") || getenv("AFL_USE_TRACE_PC") ||
       getenv("AFL_LLVM_USE_TRACE_PC") || getenv("AFL_TRACE_PC")) {
